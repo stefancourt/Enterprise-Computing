@@ -1,4 +1,3 @@
-from http.client import OK
 from flask import Flask, request
 import Store
 
