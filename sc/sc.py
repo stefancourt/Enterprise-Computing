@@ -1,26 +1,34 @@
 from flask import Flask, request
+import json
 import sqlite3
 import os
-import firebase_admin
-from firebase_admin import credentials, db
+import requests
 import argparse
 
-cred = None
-firebase_db = None
-firebase_mode = None
+FBASE = os.environ['FBASE']
 
+FIREBASE_URL = f"https://{FBASE}-default-rtdb.europe-west1.firebasedatabase.app/"
 DATABASE = "cells.db"
-app = Flask(__name__)
 
+app = Flask(__name__)
+n = 0
 def setup_firebase():
-    global cred, firebase_db, firebase_mode
-    firebase_db_name = os.environ.get('FBASE')
-    cred = credentials.Certificate("spreadsheet-208ca-firebase-adminsdk-lgvvw-a3a2ff7b65.json")
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': f'https://{firebase_db_name}-default-rtdb.europe-west1.firebasedatabase.app'
-    })
-    firebase_db = db.reference('cells')
-    firebase_mode = "test"
+    data={}
+    response = requests.post(FIREBASE_URL+"cells.json", json=data)
+    if response.status_code == 200: 
+        global n
+        n = 1
+        print("Table created successfully.")
+    else:
+        print("Failed to create table:", response.text)
+
+def firebase_get():
+    response = requests.get(FIREBASE_URL+"cells.json")
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print("Failed to GET data from Firebase:", response.text)
+        return None
 
 def setup_sqlite():
     # set up the SQLite database
@@ -38,22 +46,28 @@ def setup_database(database_flag):
         setup_sqlite()
 
 def create_connection():
-    if firebase_db:
-        return firebase_db
+    global n
+    if n == 1:
+        conn = False
+        return conn
     else:
         conn = sqlite3.connect(DATABASE)
         return conn
 
-def change_formula(formula):
+def change_formula(formula, is_first=True):
     formula = formula.replace('×', '*')
     formula = formula.replace('÷', '/')
     test_formula = formula.split(" ")
-    id_list = list()
-    print(test_formula)
-    print(id_list[0])
+    id_list = list_ids()
+    print(id_list)
+    id_list_formula = id_list + ['+', '-', '*', '/']
+    if is_first == True:
+        for i in range(len(test_formula)):
+            if test_formula[i] not in id_list_formula and not test_formula[i].isnumeric():
+                formula = formula.replace(str(test_formula[i]), "(" + str(0) + ")")
     for i in test_formula:
         print(str(i))
-        for j in id_list[0]:
+        for j in id_list:
             if j in i:
                 conn = create_connection()
                 if isinstance(conn, sqlite3.Connection):
@@ -64,16 +78,34 @@ def change_formula(formula):
                     formula = formula.replace(str(j), "(" + str(cell_formula[0]) + ")")
                     conn.close()
                 else:
-                    cell_formula = conn.child(j).get()
-                    print(str(cell_formula))
-                    formula = formula.replace(str(j), "(" + str(cell_formula) + ")")
+                    response = requests.get(FIREBASE_URL + "cells/" + j + ".json")
+                    cell_formula = response.json()
+                    formula = formula.replace(str(i), "(" + str(cell_formula) + ")")
     print(formula)
     try:
         result = eval(formula)
         print(result)
         return result
     except:
-        return change_formula(formula)
+        return change_formula(formula, is_first=False)
+
+def list_ids():
+    conn = create_connection()
+    if isinstance(conn, sqlite3.Connection):
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM cells")
+        cells = cursor.fetchall()
+        conn.close()
+        cell_ids = [cell[0] for cell in cells]
+        return cell_ids
+    else:
+        response = requests.get(FIREBASE_URL + "cells.json")
+        if response.json() !=  None:
+            cell_ids = response.json().keys()
+            cell_ids_list = [k  for  k in  cell_ids]
+            return cell_ids_list
+        else:
+            return []
 
 @app.route('/cells/<string:id>', methods=["PUT"])
 def create(id):
@@ -97,15 +129,16 @@ def create(id):
         cursor.execute("INSERT INTO cells (id, formula) VALUES (?, ?)", (js_id, formula))
         conn.commit()
         conn.close()
+        return '', 201, {"Location": "/cells/" + js_id}  # OK
     else:
-        existing_cell = conn.child(js_id).get()
-        if existing_cell:
-            conn.child(js_id).set(formula)
+        response = requests.get(FIREBASE_URL + "cells/" + js_id + ".json")
+        print(response.json())
+        if response.json() != None:
+            requests.put(FIREBASE_URL+"cells/"+js_id+".json", json=formula)
             return '', 204  # No Content - Updated
         else:
-            conn.child(js_id).set(formula)
+            requests.put(FIREBASE_URL+"cells/"+js_id+".json", json=formula)
             return '', 201, {"Location": "/cells/" + js_id}
-    return '', 201, {"Location": "/cells/" + js_id}  # OK
 
 @app.route("/cells/<string:id>", methods=["DELETE"])
 def delete(id):
@@ -123,8 +156,11 @@ def delete(id):
             conn.close()
             return '', 404
     else:
-        conn.child(id).delete()
-        return '', 204
+        response = requests.delete(FIREBASE_URL + "cells/" + id + ".json")
+        if response.status_code == 200:
+            return '', 204
+        else:
+            return '', 404
 
 @app.route("/cells", methods=["GET"])
 def list():
@@ -135,15 +171,15 @@ def list():
         cells = cursor.fetchall()
         conn.close()
         cell_ids = [cell[0] for cell in cells]
-        return cell_ids, 200
+        return json.dumps(cell_ids), 200
     else:
-        try:
-            cell_ids = conn.get().keys()
+        response = requests.get(FIREBASE_URL + "cells.json")
+        if response.json() !=  None:
+            cell_ids = response.json().keys()
             cell_ids_list = [k  for  k in  cell_ids]
-            print([k  for  k in  cell_ids])
-            return cell_ids_list, 200
-        except:
-            return [], 200
+            return json.dumps(cell_ids_list), 200
+        else:
+            return json.dumps([]), 200
 
 @app.route("/cells/<string:id>", methods=["GET"])
 def read(id):
@@ -160,10 +196,12 @@ def read(id):
         else:
             return '', 404
     else:
-        cell_formula = conn.child(id).get()
-        if cell_formula is not None:
-            cell_formula = change_formula(cell_formula)
-            print(cell_formula)
+        response = requests.get(FIREBASE_URL + "cells/" + id + ".json")
+        data = response.json()
+        print(data)
+        if data is not None:
+            cell_formula = change_formula(data)
+            print(data)
             return {"id": id, "formula": str(cell_formula)}, 200
         else:
             return '', 404
