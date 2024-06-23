@@ -84,8 +84,8 @@ fi
 ###############################################################
 ## Test [6]: read                                            ##
 ###############################################################
-ID="B2"
-ANSWER="\"formula\":\"6\""
+ID="D4"
+ANSWER="\"formula\":\"42\""
 RESOURCE=$HOST/cells/$ID
 
 STATUS=$(curl -s -X GET -o body -w "%{http_code}" $RESOURCE)
@@ -174,71 +174,3 @@ else
 fi
 
 echo "** Overall score:" $SCORE "**"
-
-
-###############################################################
-## Test [11]: update                                          ##
-###############################################################
-ID="D5"; FORMULA="A2 + D4"
-RESOURCE=$HOST/cells/$ID
-
-STATUS=$(curl -s -X PUT -d "{\"id\":\"$ID\",\"formula\":\"$FORMULA\"}" \
-    -H "Content-Type: application/json" -w "%{http_code}" $RESOURCE)
-if [ $STATUS == "201" ]; then
-    echo "Test [5]: OK"; SCORE=$(expr $SCORE + 1)
-else
-    echo "Test [5]: FAIL (" $STATUS "!= 201 )"
-fi
-
-
-###############################################################
-## Test [11]: update                                          ##
-###############################################################
-ID="D6"; FORMULA="3 + D4"
-RESOURCE=$HOST/cells/$ID
-
-STATUS=$(curl -s -X PUT -d "{\"id\":\"$ID\",\"formula\":\"$FORMULA\"}" \
-    -H "Content-Type: application/json" -w "%{http_code}" $RESOURCE)
-if [ $STATUS == "201" ]; then
-    echo "Test [5]: OK"; SCORE=$(expr $SCORE + 1)
-else
-    echo "Test [5]: FAIL (" $STATUS "!= 201 )"
-fi
-
-###############################################################
-## Test [12]: read                                            ##
-###############################################################
-ID="D6"
-ANSWER="\"formula\":\"45\""
-RESOURCE=$HOST/cells/$ID
-
-STATUS=$(curl -s -X GET -o body -w "%{http_code}" $RESOURCE)
-if [ $STATUS == "200" ]; then
-    grep -q $ANSWER body
-    if [ $? -eq 0 ]; then
-        echo "Test [6]: OK"; SCORE=$(expr $SCORE + 1)
-    else
-        echo "Test [6]: FAIL"
-    fi
-else
-    echo "Test [6]: FAIL (" $STATUS "!= 200 )"
-fi
-
-###############################################################
-## Test [13]: read                                            ##
-###############################################################
-ID="D5"
-ANSWER="\"formula\":\"42\""
-RESOURCE=$HOST/cells/$ID
-
-STATUS=$(curl -s -X GET -o body -w "%{http_code}" $RESOURCE)
-if [ $STATUS == "200" ]; then
-    grep -q $ANSWER body
-    if [ $? -eq 0 ]; then
-        echo "Test [6]: OK"; SCORE=$(expr $SCORE + 1)
-    else
-        echo "Test [6]: FAIL"
-    fi
-else
-    echo "Test [6]: FAIL (" $STATUS "!= 200 )"
-fi

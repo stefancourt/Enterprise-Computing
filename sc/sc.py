@@ -5,7 +5,7 @@ import os
 import requests
 import argparse
 
-FBASE = os.environ['FBASE']
+FBASE = "firebase-database"
 
 FIREBASE_URL = f"https://{FBASE}-default-rtdb.europe-west1.firebasedatabase.app/"
 DATABASE = "cells.db"
